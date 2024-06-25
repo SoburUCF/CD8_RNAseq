@@ -10,3 +10,8 @@ This work is licensed under a
 [cc-by-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg
 
 Repository of tissue resident CD8 T cell RNA seq data analysis
+
+Count data was collected from the publication by Crowl et al. 2022
+https://www.nature.com/articles/s41590-022-01229-8 
+
+Raw gene count data was collected from https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE182274
