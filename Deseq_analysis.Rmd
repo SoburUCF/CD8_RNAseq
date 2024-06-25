@@ -1,0 +1,444 @@
+---
+title: "CD8_rnaseq"
+author: "Sobur"
+date: "2024-06-21"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+#if (!requireNamespace("BioManager", quitely = TRUE))
+ # install.packages("BioManager")
+
+#BiocManager::install("DESeq2")
+```
+
+
+```{r}
+library(DESeq2)
+library(tidyverse)
+```
+
+### Import Count data from data dirctory
+```{r}
+Counts <- read.delim("data/counts_matrix.csv", header = TRUE, row.names = 1, sep = ",")
+```
+
+
+### For the convenience of DESeq2 analysis, remove the GeneSymbol Column for now
+
+```{r}
+Counts <- select(Counts, -GeneSymbol)
+```
+
+
+
+###If we zoom in close to zero, we can see a large number of genes with counts of zero:
+```{r}
+ggplot(Counts) +
+  geom_histogram(aes(x = Bl1), stat = "bin", bins = 200) + 
+  xlim(-5, 1000)  +
+  xlab("Raw expression counts") +
+  ylab("Number of genes")
+```
+
+### Eliminating low-count or low-expressed genes is a crucial preprocessing step. This helps to reduce noise and improve the power of downstream analyses, such as differential expression analysis. The specific thresholds and rules for raw count elimination can vary depending on the dataset and the research objectives
+
+```{r}
+Counts <- Counts[rowSums(Counts) > 50, ]
+```
+
+```{r}
+condition <- factor(c(rep("Blood", 4), rep("Fat", 2), rep("IEL", 3), rep("Kidney", 3),
+                rep("Liver", 2), rep("SG", 3), rep("Spleen", 5)))
+```
+
+```{r}
+coldata <- data.frame(row.names = colnames(Counts), condition)
+```
+
+```{r}
+colnames(Counts) %in% rownames(coldata)
+```
+
+
+###Create a DESeqDataSet object (dds) that combines the count data and the sample metadata, and specifies the experimental design
+###This function creates a DESeqDataSet object, which is the primary data structure used by DESeq2 for differential expression analysis.
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = Counts,
+                              colData = coldata,
+                              design = ~ condition) # design is the column name in the coldata with condition or for here tissue type
+```
+
+### Initiate the comprehensive process of analyzing RNA-seq data to identify differentially expressed genes between the conditions specified in your experimental design. This step is crucial for obtaining biologically meaningful insights from  RNA-seq experiments.
+- estimating size factors
+- estimating dispersions
+- gene-wise dispersion estimates
+- mean-dispersion relationship
+- final dispersion estimates
+- fitting model and testing
+
+
+
+```{r}
+dds <- DESeq(dds)
+```
+
+
+
+```{r}
+res <- results(dds)
+res
+```
+
+
+```{r}
+# Plot dispersions
+plotDispEsts(dds, main="Dispersion plot")
+
+```
+
+
+
+###The vst function from the DESeq2 package applies a variance stabilizing transformation to the count data. This transformation aims to stabilize the variance across the range of mean values, making the data more suitable for downstream analyses such as clustering or visualization.
+```{r}
+vsdata <- vst(dds, blind = FALSE)
+```
+
+### QC on the data by creating a PCA plot
+
+```{r}
+#Basic PCA plot
+plotPCA(vsdata, intgroup = "condition")
+```
+```{r}
+pcaData <- plotPCA(vsdata, intgroup = "condition", returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+```
+
+```{r}
+# Install ggalt package if not already installed
+if (!requireNamespace("ggalt", quietly = TRUE)) {
+  install.packages("ggalt")
+}
+```
+
+```{r}
+library(ggalt)
+library(ggrepel)
+```
+
+
+```{r}
+centers <- pcaData %>%
+  group_by(condition) %>%
+  summarize(PC1 = mean(PC1), PC2 = mean(PC2))
+```
+
+```{r}
+# Function to get convex hull for each group
+find_hull <- function(df) df[chull(df$PC1, df$PC2), ]
+
+# Apply the function to each condition group
+hulls <- pcaData %>%
+  group_by(condition) %>%
+  do(find_hull(.))
+```
+
+### Create a customized PCA plot
+
+```{r}
+ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
+  geom_point(size = 2) +  # Points
+  geom_polygon(data = hulls, aes(x = PC1, y = PC2, group = condition, fill = condition), alpha = 0.2) +  # Polygons around points
+  geom_text_repel(data = centers, aes(x = PC1, y = PC2, label = condition), size = 5, show.legend = FALSE) +  # Condition labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) + 
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  ggtitle("PCA of VST Data") +
+  labs(color = "Tissue", fill = "Tissue") +  # Label the legend as "Tissue"
+  theme_classic() +
+  theme(legend.position = "right")
+```
+
+```{r}
+### Transform counts for data visualization
+rld <- rlog(dds, blind=TRUE)
+
+### Extract the rlog matrix from the object
+rld_mat <- assay(rld)    ## assay() is function from the "SummarizedExperiment" package that was loaded when you loaded DESeq2
+
+### Compute pairwise correlation values
+rld_cor <- cor(rld_mat)    ## cor() is a base R function
+```
+
+```{r}
+library(pheatmap)
+```
+
+
+```{r}
+### Plot heatmap
+pheatmap(rld_cor)
+```
+```{r}
+contrast_oe <- c("condition", "Blood", "Spleen")
+```
+
+```{r}
+res_unsh <- results(dds, contrast=contrast_oe)
+```
+
+```{r}
+plotMA(res_unsh, ylim=c(-2,2))
+```
+
+
+
+```{r}
+library(ashr)
+res_sh <- lfcShrink(dds, contrast=contrast_oe, res = res_unsh, type = "ashr")
+```
+
+```{r}
+plotMA(res_sh, ylim=c(-2,2))
+```
+
+```{r}
+sigs <- res_unsh
+
+```
+```{r}
+sigs_tb <- sigs %>%
+  data.frame() %>%
+  rownames_to_column(var="gene") %>% 
+  as_tibble()
+```
+
+```{r}
+sigsOE <- sigs_tb 
+```
+
+
+```{r}
+normalized_counts <- counts(dds, normalized=TRUE)
+```
+
+
+```{r}
+normalized_counts <- normalized_counts %>% 
+  data.frame() %>%
+  rownames_to_column(var="gene") %>% 
+  as_tibble()
+
+```
+
+
+```{r}
+norm_OEsig <- normalized_counts %>% 
+  filter(gene %in% sigsOE$gene) %>% 
+  data.frame() %>%
+  column_to_rownames(var = "gene") 
+```
+
+
+```{r}
+library(pheatmap)
+```
+
+
+```{r}
+pheatmap(norm_OEsig, 
+         cluster_rows = T, 
+         show_rownames = F,
+         border_color = NA, 
+         fontsize = 10, 
+         scale = "row", 
+         fontsize_row = 10, 
+         height = 20)
+```
+
+
+
+#Clustering Heatmap
+### Define contrasts comparing each tissue with spleen
+
+```{r}
+contrasts <- list(
+  Blood_vs_Spleen = c("condition", "Blood", "Spleen"),
+  Fat_vs_Spleen = c("condition", "IEL", "Spleen"),
+  IEL_vs_Spleen = c("condition", "Kidney", "Spleen"),
+  Kidney_vs_Spleen = c("condition", "SG", "Spleen"),
+  Liver_vs_Spleen = c("condition", "Fat", "Spleen"),
+  SG_vs_Spleen = c("condition", "Liver", "Spleen")
+)
+```
+
+### For each contrast, extract DEGs based on the criteria log2(fold-change) > 1 and Padj < 0.05.
+```{r}
+# List to store DEGs for each contrast
+all_degs <- list()
+
+# Loop through each contrast
+for (con in names(contrasts)) {
+  # Get results for the contrast
+  res <- results(dds, contrast = contrasts[[con]])
+  
+  # Filter DEGs based on log2 fold-change and adjusted p-value, excluding NA values
+  de_genes <- res[abs(res$log2FoldChange) > 1 & !is.na(res$padj) & res$padj < 0.05, ]
+  
+  # Add filtered DEGs to the list
+  all_degs[[con]] <- de_genes
+}
+
+
+```
+
+
+```{r}
+# Combine all DEGs into a single dataframe (or list)
+all_degs_combined <- do.call(rbind, all_degs)
+
+# Optionally, remove duplicates if needed
+all_degs_combined <- unique(all_degs_combined)
+
+```
+
+
+```{r}
+plotMA(all_degs_combined, ylim=c(-2,2))
+```
+```{r}
+sigs_tb <- all_degs_combined %>%
+  data.frame() %>%
+  rownames_to_column(var="gene") %>% 
+  as_tibble()
+
+#####Extracting significant differentially expressed genes
+
+### Set thresholds
+padj.cutoff <- 0.01
+lfc.cutoff <- 1
+
+
+#Now we can subset that table to only keep the significant genes using our pre-defined thresholds:
+  
+sigOE <- sigs_tb %>%
+  filter(padj < padj.cutoff & abs(log2FoldChange) > lfc.cutoff)
+```
+
+#Visualizing the results
+```{r}
+# Install and load required packages
+if (!requireNamespace("pheatmap", quietly = TRUE)) {
+  install.packages("pheatmap")
+}
+library(pheatmap)
+
+```
+
+```{r}
+
+library(DEGreport)
+library(RColorBrewer)
+library(pheatmap)
+
+```
+
+
+```{r}
+#Let’s create tibble objects from the meta and normalized_counts data frames before we start plotting.
+#This will enable us to use the tidyverse functionality more easily.
+
+# Create tibbles including row names
+mov10_meta <- coldata %>% 
+  rownames_to_column(var="samplename") %>% 
+  as_tibble()
+```
+
+### Extract the normalized count data
+```{r}
+normalized_counts <- counts(dds, normalized=TRUE)
+```
+
+
+```{r}
+normalized_counts <- normalized_counts %>% 
+  data.frame() %>%
+  rownames_to_column(var="gene") %>% 
+  as_tibble()
+```
+
+```{r}
+### Extract normalized expression for significant genes from the OE and control samples (4:9), and set the gene column (1) to row names
+norm_OEsig <- normalized_counts %>% 
+  filter(gene %in% sigOE$gene) %>% 
+  data.frame() %>%
+  column_to_rownames(var = "gene") 
+```
+
+```{r}
+desired_order_cols <- c("Spl", "Bl", "IEL", "Kid", "SG", "Fat", "Liv")
+# Extract the prefix of each column name (e.g., Spl, Bl, etc.)
+column_prefixes <- gsub("[0-9]", "", names(norm_OEsig))
+
+# Match the prefix with the desired order
+ordered_indices <- unlist(lapply(desired_order_cols, function(prefix) which(column_prefixes == prefix)))
+
+# Reorder the columns of norm_OEsig
+norm_OEsig_ordered <- norm_OEsig[, ordered_indices]
+
+```
+
+
+```{r}
+### Annotate our heatmap (optional)
+annotation <- mov10_meta %>% 
+  select(samplename, condition) %>% 
+  data.frame(row.names = "samplename")
+
+```
+
+```{r}
+# Define the desired order of conditions
+desired_order <- c("Spleen", "Blood", "IEL", "Kidney", "SG", "Fat", "Liver")
+
+# Convert the 'condition' column to a factor with the specified order
+annotation$condition <- factor(annotation$condition, levels = desired_order)
+
+# Reorder the annotation data frame based on the 'condition' column
+annotation <- annotation[order(annotation$condition), , drop = FALSE]
+```
+
+
+
+```{r}
+# Extract conditions from colData (adjust as per your actual data structure)
+conditions <- colData(dds)$condition
+
+# Merge conditions with all_degs_combined based on row names or another identifier
+all_degs_combined <- cbind(all_degs_combined, condition = conditions[rownames(all_degs_combined)])
+
+```
+
+
+```{r}
+# Create a color palette for the heatmap
+heatmap_colors <- colorRampPalette(c("blue3", "white","red3"))(500)
+
+# Generate the heatmap
+pheatmap(norm_OEsig_ordered, 
+         cluster_rows = FALSE,
+         cluster_cols = F, 
+         show_rownames = FALSE,
+         show_colnames = FALSE, # Remove column names from the bottom
+         annotation_col = annotation, # Add annotation on the top
+         border_color = NA, 
+         fontsize = 10, 
+         scale = "row", 
+         fontsize_row = 10, 
+         color = heatmap_colors) # Set the custom color palette
+```
+
+
