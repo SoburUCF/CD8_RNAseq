@@ -8,10 +8,10 @@ output:
 ---
 
 ```{r}
-#if (!requireNamespace("BioManager", quitely = TRUE))
- # install.packages("BioManager")
+if (!requireNamespace("BioManager", quitely = TRUE))
+  install.packages("BioManager")
 
-#BiocManager::install("DESeq2")
+BiocManager::install("DESeq2")
 ```
 
 
@@ -86,7 +86,7 @@ dds <- DESeqDataSetFromMatrix(countData = Counts,
 dds <- DESeq(dds)
 ```
 
-
+The results function in DESeq2 is used to extract the results of the differential expression analysis from a DESeqDataSet object. It provides a table of statistics for each gene, including the log2 fold changes, p-values, and adjusted p-values.
 
 ```{r}
 res <- results(dds)
@@ -147,10 +147,10 @@ hulls <- pcaData %>%
   do(find_hull(.))
 ```
 
-### Create a customized PCA plot
+### Create a customized PCA plot like the figure
 
 ```{r}
-ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
+PCA_plot <- ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
   geom_point(size = 2) +  # Points
   geom_polygon(data = hulls, aes(x = PC1, y = PC2, group = condition, fill = condition), alpha = 0.2) +  # Polygons around points
   geom_text_repel(data = centers, aes(x = PC1, y = PC2, label = condition), size = 5, show.legend = FALSE) +  # Condition labels
@@ -160,6 +160,11 @@ ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
   labs(color = "Tissue", fill = "Tissue") +  # Label the legend as "Tissue"
   theme_classic() +
   theme(legend.position = "right")
+
+png("output/PCA_plot_fig1c.png", res = 250, width = 1500, height = 1500)
+print(PCA_plot)
+dev.off()
+
 ```
 
 ```{r}
@@ -428,7 +433,7 @@ all_degs_combined <- cbind(all_degs_combined, condition = conditions[rownames(al
 heatmap_colors <- colorRampPalette(c("blue3", "white","red3"))(500)
 
 # Generate the heatmap
-pheatmap(norm_OEsig_ordered, 
+heatmap <- pheatmap(norm_OEsig_ordered, 
          cluster_rows = FALSE,
          cluster_cols = F, 
          show_rownames = FALSE,
@@ -439,6 +444,10 @@ pheatmap(norm_OEsig_ordered,
          scale = "row", 
          fontsize_row = 10, 
          color = heatmap_colors) # Set the custom color palette
+
+png("output/heatmap.png", res = 250, width = 2200, height = 3000)
+print(heatmap)
+dev.off()
 ```
 
 
