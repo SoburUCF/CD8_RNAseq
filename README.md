@@ -14,4 +14,4 @@ Repository of tissue resident CD8 T cell RNA seq data analysis
 Count data was collected from the publication by Crowl et al. 2022
 https://www.nature.com/articles/s41590-022-01229-8 
 
-Raw gene count data was collected from https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE182274
+Bulk RNA sequencing raw gene count data was collected from https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE182274
