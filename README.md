@@ -28,7 +28,7 @@ Using Hisat2 : https://github.com/DaehwanKimLab/hisat2
 wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
 #Unzip the file
-gunzip Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+gunzip hg38.fa.gz
 
 #Index the ref genome
 hisat2-build hg38.fa hg38_index
