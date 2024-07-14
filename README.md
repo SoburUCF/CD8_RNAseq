@@ -24,11 +24,10 @@ Bulk RNA sequencing raw gene count data was collected from https://www.ncbi.nlm.
 Using Hisat2 : https://github.com/DaehwanKimLab/hisat2
 
 ```
-#Download the reference genome from UCSC website
+#This will download the human reference genome and annotation file from UCSC website
 wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
-
-#Unzip the file
-gunzip hg38.fa.gz
+wget https://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/genes/hg38.ensGene.gtf.gz
+gunzip *.gz
 
 #Index the ref genome
 hisat2-build hg38.fa hg38_index
