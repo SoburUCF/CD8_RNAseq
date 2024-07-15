@@ -15,3 +15,20 @@ Count data was collected from the publication by Crowl et al. 2022
 https://www.nature.com/articles/s41590-022-01229-8 
 
 Bulk RNA sequencing raw gene count data was collected from https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE182274
+
+
+
+
+### RNA seq alignment
+
+Using Hisat2 : https://github.com/DaehwanKimLab/hisat2
+
+```
+#This will download the human reference genome and annotation file from UCSC website
+wget http://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+wget https://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips/genes/hg38.ensGene.gtf.gz
+gunzip *.gz
+
+#Index the ref genome
+hisat2-build hg38.fa hg38_index
+```
