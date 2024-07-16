@@ -290,13 +290,13 @@ pheatmap(norm_OEsig_ordered,
 ```
 ## Volcano plot for differntially expressed gene in Blood and Spleen tissue samples
 
+Create a sample contract
 ```{r}
 contrast_BI <- c("condition", "Blood", "IEL")
 res <- results(dds, contrast=contrast_BI)
 plotMA(res, ylim=c(-2,2))
 ```
 Set the cutpoint
-
 ```{r}
 sigs_E <- na.omit(res)
 ```
@@ -346,15 +346,6 @@ EnhancedVolcano(sign_Edata,
 ```
 ## Convert Ensembl IDs to genesymbol
 org.Mm.eg.db: Genome wide annotation for Mouse. R package version 3.8.2.
-```{r}
-sign_data <- as.data.frame(sigs)
-```
-
-Conversion, Remove version numbers from Ensembl IDs
-```{r}
-clean_ensembl_ids_E <- sub("\\..*", "", rownames(sign_data))
-```
-
 Gene ontology (GO)
 ```{r}
 gene_annotation <- enrichGO(gene = clean_ensembl_ids_E, OrgDb = "org.Mm.eg.db", keyType = "ENSEMBL", ont = "BP")
