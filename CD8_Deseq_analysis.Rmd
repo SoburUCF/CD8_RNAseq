@@ -1,0 +1,379 @@
+---
+title: "CD8_rnaseq"
+
+---
+
+Install DESeq2
+```{r}
+#if (!requireNamespace("BioManager", quitely = TRUE))
+ # install.packages("BioManager")
+
+#BiocManager::install("DESeq2")
+#BiocManager::install("BiocGenerics")
+#BiocManager::install("org.Mm.eg.db")
+#BiocManager::install("AnnotationDbi")
+#BiocManager::install("EnhancedVolcano")
+#BiocManager::install("clusterProfiler")
+```
+
+```{r}
+# Install ggalt package if not already installed
+if (!requireNamespace("ggalt", quietly = TRUE)) {
+  install.packages("ggalt")
+}
+```
+
+Import libraries
+```{r}
+library(DESeq2)
+library(tidyverse)
+library(ggalt)
+library(ggrepel)
+library(pheatmap)
+library(RColorBrewer)
+library(BiocGenerics)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(EnhancedVolcano)
+library(clusterProfiler)
+library(enrichplot)
+```
+
+
+Import Count data from data directory
+```{r}
+Counts <- read.delim("data/counts_matrix.csv", header = TRUE, row.names = 1, sep = ",")
+```
+
+For the convenience of DESeq2 analysis, remove the GeneSymbol Column for now
+Later create it with enseble Ids
+```{r}
+Counts <- select(Counts, -GeneSymbol)
+```
+
+Explore the count data
+If we zoom in close to zero, we can see a large number of genes with counts of zero:
+```{r}
+names(Counts)
+ggplot(Counts) +
+  geom_histogram(aes(x = Bl1), stat = "bin", bins = 200) + 
+  xlim(-5, 1000)  +
+  xlab("Raw expression counts") +
+  ylab("Number of genes")
+```
+
+Eliminating low-count or low-expressed genes is a crucial preprocessing step. This helps to reduce noise and improve the power of downstream analyses, such as differential expression analysis. The specific thresholds and rules for raw count elimination can vary depending on the dataset and the research objectives
+```{r}
+Counts <- Counts[rowSums(Counts) > 50, ]
+```
+
+Create a factor with the samples/tissues and replicate as condition
+```{r}
+condition <- factor(c(rep("Blood", 4), rep("Fat", 2), rep("IEL", 3), rep("Kidney", 3),
+                rep("Liver", 2), rep("SG", 3), rep("Spleen", 5)))
+```
+
+A metadata dataframe with cells 
+```{r}
+coldata <- data.frame(row.names = colnames(Counts), condition)
+colnames(Counts) %in% rownames(coldata)
+```
+
+
+Create a DESeqDataSet object (dds) that combines the count data and the sample metadata, and specifies the experimental design
+This function creates a DESeqDataSet object, which is the primary data structure used by DESeq2 for differential expression analysis.
+design is the column name in the coldata with condition or for here tissue type
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = Counts,
+                              colData = coldata,
+                              design = ~ condition) 
+```
+
+Initiate the comprehensive process of analyzing RNA-seq data to identify differentially expressed genes between the conditions specified in your experimental design. This step is crucial for obtaining biologically meaningful insights from  RNA-seq experiments.
+- estimating size factors
+- estimating dispersions
+- gene-wise dispersion estimates
+- mean-dispersion relationship
+- final dispersion estimates
+- fitting model and testing
+```{r}
+dds <- DESeq(dds)
+```
+
+Plot dispersions
+```{r}
+plotDispEsts(dds, main="Dispersion plot")
+```
+
+The vst function from the DESeq2 package applies a variance stabilizing transformation to the count data. This transformation aims to stabilize the variance across the range of mean values, making the data more suitable for downstream analyses such as clustering or visualization.
+```{r}
+vst.data <- vst(dds, blind = FALSE)
+```
+
+QC on the data by creating a PCA plot
+```{r}
+plotPCA(vsdata, intgroup = "condition")
+```
+Extract the pcaData
+```{r}
+pcaData <- plotPCA(vst.data, intgroup = "condition", returnData = TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+```
+
+Define the cluster of the pca plot
+```{r}
+centers <- pcaData %>%
+  group_by(condition) %>%
+  summarize(PC1 = mean(PC1), PC2 = mean(PC2))
+```
+
+Function to get convex hull for each group
+```{r}
+find_hull <- function(df) df[chull(df$PC1, df$PC2), ]
+hulls <- pcaData %>%
+  group_by(condition) %>%
+  do(find_hull(.))
+```
+
+Create a customized PCA plot
+```{r}
+ggplot(pcaData, aes(x = PC1, y = PC2, color = condition)) +
+  geom_point(size = 2) +  # Points
+  geom_polygon(data = hulls, aes(x = PC1, y = PC2, group = condition, fill = condition), alpha = 0.2) +  # Polygons around points
+  geom_text_repel(data = centers, aes(x = PC1, y = PC2, label = condition), size = 5, show.legend = FALSE) +  # Condition labels
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) + 
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  ggtitle("PCA of VST Data") +
+  labs(color = "Tissue", fill = "Tissue") +  # Label the legend as "Tissue"
+  theme_classic() +
+  theme(legend.position = "right")
+```
+
+Transform counts for data visualization
+Extract the rlog matrix from the object
+Compute pairwise correlation values
+```{r}
+rld <- rlog(dds, blind=TRUE)
+rld_mat <- assay(rld) 
+rld_cor <- cor(rld_mat)   
+```
+
+Plot heatmap
+```{r}
+pheatmap(rld_cor)
+```
+## Heatmap of highly expressed genes in differnt tissue compared to spleen
+
+Define contrasts comparing each tissue with spleen
+```{r}
+contrasts <- list(
+  Blood_vs_Spleen = c("condition", "Blood", "Spleen"),
+  Fat_vs_Spleen = c("condition", "IEL", "Spleen"),
+  IEL_vs_Spleen = c("condition", "Kidney", "Spleen"),
+  Kidney_vs_Spleen = c("condition", "SG", "Spleen"),
+  Liver_vs_Spleen = c("condition", "Fat", "Spleen"),
+  SG_vs_Spleen = c("condition", "Liver", "Spleen")
+)
+```
+
+For each contrast, extract DEGs based on the criteria log2(fold-change) > 1 and Padj < 0.05.
+```{r}
+# List to store DEGs for each contrast
+all_degs <- list()
+
+# Loop through each contrast
+for (con in names(contrasts)) {
+  # Get results for the contrast
+  res <- results(dds, contrast = contrasts[[con]])
+  
+  # Filter DEGs based on log2 fold-change and adjusted p-value, excluding NA values
+  de_genes <- res[abs(res$log2FoldChange) > 1 & !is.na(res$padj) & res$padj < 0.05, ]
+  
+  # Add filtered DEGs to the list
+  all_degs[[con]] <- de_genes
+}
+```
+
+
+```{r}
+# Combine all DEGs into a single dataframe (or list)
+all_degs_combined <- do.call(rbind, all_degs)
+
+# Optionally, remove duplicates if needed
+all_degs_combined <- unique(all_degs_combined)
+
+```
+
+Plot
+```{r}
+plotMA(all_degs_combined, ylim=c(-2,2))
+```
+Singificnat genes as tables
+```{r}
+sigOE <- all_degs_combined %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "gene") %>%
+  as_tibble() %>%
+  filter(padj < 0.01 & abs(log2FoldChange) > 1)
+```
+
+Extract the normalized count data
+```{r}
+normalized_counts <- counts(dds, normalized=TRUE)
+normalized_counts <- normalized_counts %>% 
+  data.frame() %>%
+  rownames_to_column(var="gene") %>% 
+  as_tibble()
+```
+
+Extract normalized expression for significant genes, and set the gene column (1) to row names
+```{r}
+norm_OEsig <- normalized_counts %>% 
+  filter(gene %in% sigOE$gene) %>% 
+  data.frame() %>%
+  column_to_rownames(var = "gene") 
+```
+
+Heatmap customization
+```{r}
+desired_order_cols <- c("Spl", "Bl", "IEL", "Kid", "SG", "Fat", "Liv")
+# Extract the prefix of each column name (e.g., Spl, Bl, etc.)
+column_prefixes <- gsub("[0-9]", "", names(norm_OEsig))
+
+# Match the prefix with the desired order
+ordered_indices <- unlist(lapply(desired_order_cols, function(prefix) which(column_prefixes == prefix)))
+
+# Reorder the columns of norm_OEsig
+norm_OEsig_ordered <- norm_OEsig[, ordered_indices]
+
+```
+
+Define the desired order of conditions
+```{r}
+desired_order <- c("Spleen", "Blood", "IEL", "Kidney", "SG", "Fat", "Liver")
+
+# Convert the 'condition' column to a factor with the specified order
+annotation$condition <- factor(annotation$condition, levels = desired_order)
+
+# Reorder the annotation data frame based on the 'condition' column
+annotation <- annotation[order(annotation$condition), , drop = FALSE]
+```
+
+
+
+```{r}
+# Extract conditions from colData (adjust as per your actual data structure)
+conditions <- colData(dds)$condition
+
+# Merge conditions with all_degs_combined based on row names or another identifier
+all_degs_combined <- cbind(all_degs_combined, condition = conditions[rownames(all_degs_combined)])
+
+```
+
+Constract the heatmap
+```{r}
+# Create a color palette for the heatmap
+heatmap_colors <- colorRampPalette(c("blue3", "white","red3"))(500)
+
+# Generate the heatmap
+pheatmap(norm_OEsig_ordered, 
+         cluster_rows = FALSE,
+         cluster_cols = F, 
+         show_rownames = FALSE,
+         show_colnames = FALSE, # Remove column names from the bottom
+         annotation_col = annotation, # Add annotation on the top
+         border_color = NA, 
+         fontsize = 10, 
+         scale = "row", 
+         fontsize_row = 10, 
+         color = heatmap_colors) # Set the custom color palette
+```
+## Volcano plot for differntially expressed gene in Blood and Spleen tissue samples
+
+```{r}
+contrast_BI <- c("condition", "Blood", "IEL")
+res <- results(dds, contrast=contrast_BI)
+plotMA(res, ylim=c(-2,2))
+```
+Set the cutpoint
+
+```{r}
+sigs_E <- na.omit(res)
+```
+
+```{r}
+sign_Edata <- as.data.frame(sigs_E)
+```
+
+```{r}
+# Remove version numbers from Ensembl IDs
+clean_ensembl_ids_E <- sub("\\..*", "", rownames(sign_Edata))
+```
+
+
+```{r}
+# Map cleaned Ensembl IDs to Gene Symbols
+gene_symbols_E <- mapIds(org.Mm.eg.db, 
+                       keys = clean_ensembl_ids_E, 
+                       column = "SYMBOL", 
+                       keytype = "ENSEMBL", 
+                       multiVals = "first")
+
+
+```
+
+
+```{r}
+# Add the Gene Symbols to your data frame
+sign_Edata$GeneSymbol <- gene_symbols_E
+```
+
+```{r}
+EnhancedVolcano(sign_Edata,
+                x = "log2FoldChange",
+                y = "padj",
+                lab = sign_Edata$GeneSymbol,
+                pCutoff = 10e-25,
+                FCcutoff = 2.5,
+                pointSize = 4.0,
+                labSize = 6.0,
+                colAlpha = 1,
+                legendLabels=c('Not sig.','Log (base 2) FC','p-value','p-value & Log (base 2) FC'),
+                legendPosition = 'top',
+                legendLabSize = 16,
+                legendIconSize = 5.0)
+
+```
+## Convert Ensembl IDs to genesymbol
+org.Mm.eg.db: Genome wide annotation for Mouse. R package version 3.8.2.
+```{r}
+sign_data <- as.data.frame(sigs)
+```
+
+Conversion, Remove version numbers from Ensembl IDs
+```{r}
+clean_ensembl_ids_E <- sub("\\..*", "", rownames(sign_data))
+```
+
+Gene ontology (GO)
+```{r}
+gene_annotation <- enrichGO(gene = clean_ensembl_ids_E, OrgDb = "org.Mm.eg.db", keyType = "ENSEMBL", ont = "BP")
+
+```
+
+```{r}
+View(as.data.frame(gene_annotation))
+```
+
+Bar Plot
+```{r}
+png("output/barplot.png", res = 250, width = 2200, height = 3000)
+plot(barplot(gene_annotation, showCategory = 20))
+dev.off()
+```
+Dot plot
+```{r}
+#png("output//Dotplot_ORA.png", res = 250, width = 2200, height = 3300)
+dotplot(gene_annotation, showCategory=30) + ggtitle("Dotplot for ORA")
+#dev.off()
+```
