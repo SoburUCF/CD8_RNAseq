@@ -5,15 +5,15 @@ title: "CD8_rnaseq"
 
 Install DESeq2
 ```{r}
-#if (!requireNamespace("BioManager", quitely = TRUE))
- # install.packages("BioManager")
+if (!requireNamespace("BiocManager", quitely = TRUE))
+  install.packages("BiocManager")
 
-#BiocManager::install("DESeq2")
-#BiocManager::install("BiocGenerics")
-#BiocManager::install("org.Mm.eg.db")
-#BiocManager::install("AnnotationDbi")
-#BiocManager::install("EnhancedVolcano")
-#BiocManager::install("clusterProfiler")
+BiocManager::install("DESeq2")
+BiocManager::install("BiocGenerics")
+BiocManager::install("org.Mm.eg.db")
+BiocManager::install("AnnotationDbi")
+BiocManager::install("EnhancedVolcano")
+BiocManager::install("clusterProfiler")
 ```
 
 ```{r}
@@ -107,7 +107,7 @@ plotDispEsts(dds, main="Dispersion plot")
 
 The vst function from the DESeq2 package applies a variance stabilizing transformation to the count data. This transformation aims to stabilize the variance across the range of mean values, making the data more suitable for downstream analyses such as clustering or visualization.
 ```{r}
-vst.data <- vst(dds, blind = FALSE)
+vsdata <- vst(dds, blind = FALSE)
 ```
 
 QC on the data by creating a PCA plot
